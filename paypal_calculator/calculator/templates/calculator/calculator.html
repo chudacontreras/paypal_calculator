@@ -1,0 +1,168 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Comisiones PayPal</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-8">
+            <h1 class="text-3xl font-bold text-center mb-8 text-blue-600">
+                Calculadora de Comisiones PayPal
+            </h1>
+
+            <!-- Tabs -->
+            <div class="flex mb-8">
+                <button id="sendTab"
+                        class="flex-1 py-3 px-4 text-center font-semibold rounded-tl-lg rounded-bl-lg bg-blue-500 text-white"
+                        onclick="switchTab('send')">
+                    Enviar Dinero
+                </button>
+                <button id="receiveTab"
+                        class="flex-1 py-3 px-4 text-center font-semibold rounded-tr-lg rounded-br-lg bg-gray-200"
+                        onclick="switchTab('receive')">
+                    Recibir Dinero
+                </button>
+            </div>
+
+            <!-- Calculator Form -->
+            <form id="calculatorForm" class="space-y-6">
+                {% csrf_token %}
+                <input type="hidden" id="direction" name="direction" value="send">
+
+                <div class="space-y-2">
+                    <label id="amountLabel" class="block text-lg font-medium text-gray-700">
+                        Monto a enviar (USD)
+                    </label>
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                        <input type="number"
+                               step="0.01"
+                               id="amount"
+                               name="amount"
+                               class="block w-full pl-8 pr-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 transition-colors"
+                               required>
+                    </div>
+                </div>
+
+                <button type="submit"
+                        class="w-full bg-blue-500 text-white py-3 px-6 rounded-lg text-lg font-semibold hover:bg-blue-600 transition-colors">
+                    Calcular
+                </button>
+            </form>
+
+            <!-- Results -->
+            <div id="results" class="mt-8 space-y-4 hidden">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Monto total -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="text-sm font-medium text-gray-500" id="grossLabel">Monto a enviar</h3>
+                        <p class="text-2xl font-bold text-gray-800" id="grossAmount">$0.00</p>
+                    </div>
+
+                    <!-- Comisión -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="text-sm font-medium text-gray-500">Comisión PayPal</h3>
+                        <p class="text-2xl font-bold text-red-600" id="fee">$0.00</p>
+                    </div>
+
+                    <!-- Monto neto -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="text-sm font-medium text-gray-500" id="netLabel">Monto a recibir</h3>
+                        <p class="text-2xl font-bold text-green-600" id="netAmount">$0.00</p>
+                    </div>
+                </div>
+
+                <!-- Desglose de comisión -->
+                <div class="mt-6 bg-blue-50 rounded-lg p-4">
+                    <h3 class="text-lg font-semibold mb-2">Desglose de la comisión:</h3>
+                    <p>• Tarifa fija: <span class="font-semibold">$0.30 USD</span></p>
+                    <p>• Tarifa porcentual: <span class="font-semibold">5.4%</span></p>
+                </div>
+            </div>
+
+            <!-- Error message -->
+            <div id="error" class="mt-6 p-4 bg-red-100 text-red-700 rounded-lg hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(direction) {
+            // Update UI
+            const sendTab = document.getElementById('sendTab');
+            const receiveTab = document.getElementById('receiveTab');
+            const amountLabel = document.getElementById('amountLabel');
+            const direction_input = document.getElementById('direction');
+
+            if (direction === 'send') {
+                sendTab.classList.add('bg-blue-500', 'text-white');
+                sendTab.classList.remove('bg-gray-200', 'text-gray-700');
+                receiveTab.classList.add('bg-gray-200', 'text-gray-700');
+                receiveTab.classList.remove('bg-blue-500', 'text-white');
+                amountLabel.textContent = 'Monto a enviar (USD)';
+            } else {
+                receiveTab.classList.add('bg-blue-500', 'text-white');
+                receiveTab.classList.remove('bg-gray-200', 'text-gray-700');
+                sendTab.classList.add('bg-gray-200', 'text-gray-700');
+                sendTab.classList.remove('bg-blue-500', 'text-white');
+                amountLabel.textContent = 'Monto a recibir (USD)';
+            }
+
+            direction_input.value = direction;
+
+            // Hide results when switching tabs
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+        }
+
+        document.getElementById('calculatorForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const form = e.target;
+            const formData = new FormData(form);
+            const resultsDiv = document.getElementById('results');
+            const errorDiv = document.getElementById('error');
+            const direction = formData.get('direction');
+
+            try {
+                const response = await fetch('/calculate/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en el cálculo');
+                }
+
+                // Update labels based on direction
+                const grossLabel = document.getElementById('grossLabel');
+                const netLabel = document.getElementById('netLabel');
+                if (direction === 'send') {
+                    grossLabel.textContent = 'Monto a enviar';
+                    netLabel.textContent = 'Monto a recibir';
+                } else {
+                    grossLabel.textContent = 'Remitente debe enviar';
+                    netLabel.textContent = 'Monto a recibir';
+                }
+
+                // Update amounts
+                document.getElementById('grossAmount').textContent = `$${parseFloat(data.gross_amount).toFixed(2)}`;
+                document.getElementById('fee').textContent = `$${parseFloat(data.fee).toFixed(2)}`;
+                document.getElementById('netAmount').textContent = `$${parseFloat(data.net_amount).toFixed(2)}`;
+
+                resultsDiv.classList.remove('hidden');
+                errorDiv.classList.add('hidden');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+                resultsDiv.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
